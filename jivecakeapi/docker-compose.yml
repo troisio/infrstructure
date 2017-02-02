@@ -1,0 +1,15 @@
+version: '2'
+services:
+  api:
+    image: jivecakeapi
+    environment:
+      - KEY_STORE_PASSWORD=
+      - PORT_FORWARD_URL=
+      - PORT_FORWARD_USER=
+    ports:
+      - "443:443"
+    volumes:
+      - /root/settings.yml:/root/settings.yml
+      - /root/tls:/root/tls
+      - /root/.ssh/id_rsa:/root/.ssh/id_rsa
+      - /root/jivecakeapi:/root/jivecakeapi
