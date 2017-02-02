@@ -28,35 +28,29 @@ type GithubWebHook struct {
 }
 
 func main() {
+  token := oauth2.Token{AccessToken: os.Args[1]}
+  source := oauth2.StaticTokenSource(&token)
+  oauthClient := oauth2.NewClient(oauth2.NoContext, source)
+  client := godo.NewClient(oauthClient)
+
   http.HandleFunc("/github", func(writer http.ResponseWriter, request *http.Request) {
     defer request.Body.Close()
     decoder := json.NewDecoder(request.Body)
     webhook := new(GithubWebHook)
     decoder.Decode(&webhook)
 
-    token := oauth2.Token{AccessToken: os.Args[1]}
-    source := oauth2.StaticTokenSource(&token)
-    oauthClient := oauth2.NewClient(oauth2.NoContext, source)
-    client := godo.NewClient(oauthClient)
-
     currenttime := int32(time.Now().Unix())
 
-    cmd := exec.Command(
+    exec.Command(
       "ssh-keygen",
       "-b", "4048",
       "-f", fmt.Sprintf("%v", currenttime),
       "-t", "rsa",
       "-N", "",
       "-C", fmt.Sprintf("\"jivecakeapi-%v\"", currenttime),
-    )
+    ).Run()
 
-    cmd.Run()
-
-    publicBytes, err := ioutil.ReadFile(fmt.Sprintf("%v.pub", currenttime))
-
-    if err != nil {
-      panic(err)
-    }
+    publicBytes, _ := ioutil.ReadFile(fmt.Sprintf("%v.pub", currenttime))
 
     sshKey, _, _ := client.Keys.Create(&godo.KeyCreateRequest{
       Name: fmt.Sprintf("%v.pub", currenttime),
@@ -76,13 +70,26 @@ func main() {
       IPv6: true,
     }
 
-    newDroplet, _, err := client.Droplets.Create(&createRequest)
+    newDroplet, _, _ := client.Droplets.Create(&createRequest)
+    droplet, _, _ := client.Droplets.Get(newDroplet.ID)
 
-    if err != nil {
-      panic(err)
+    for ; len(droplet.Networks.V4) < 1; {
+      droplet, _, _ = client.Droplets.Get(newDroplet.ID)
     }
 
-    fmt.Fprintf(writer, "%+v\n", newDroplet)
+    ip, _ := droplet.PublicIPv4()
+
+    installScript, _ := ioutil.ReadFile("../centos7/install.sh")
+
+    cmd := exec.Command(
+      "ssh",
+      "-i", fmt.Sprintf("%v", currenttime),
+      "-o", "StrictHostKeyChecking=no",
+      fmt.Sprintf("root@%s", ip),
+      "bash", "-s", string(installScript),
+    )
+
+    cmd.Run()
   })
 
   log.Fatal(http.ListenAndServe(":8080", nil))

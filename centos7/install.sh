@@ -1,7 +1,5 @@
 #!/bin/bash
 
-ssh-keygen -b 4048 -f ~/.ssh/id_rsa -t rsa -N "" -C $1
-
 yum -y update
 yum install -y git-all nano man man-pages curl
 yum clean all
