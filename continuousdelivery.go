@@ -29,7 +29,7 @@ type GithubWebHook struct {
 func createApiDroplet(client *godo.Client, installScript string, currentTime int32) *godo.Droplet {
   createRequest := godo.DropletCreateRequest{
     Name: fmt.Sprintf("jivecakeapi-%v", currentTime),
-    Region: "nyc3",
+    Region: "nyc1",
     Size: "2gb",
     Image: godo.DropletCreateImage{
       Slug: "centos-7-x64",
@@ -72,10 +72,21 @@ func createApiDroplet(client *godo.Client, installScript string, currentTime int
     "-d",
   ).Run()
 
+  hasError := false
+
   for _, err := range errors {
     if err != nil {
-      panic(err)
+      fmt.Printf("%+v\n", err)
+      hasError = true
     }
+  }
+
+  if !hasError {
+    /*block until droplet ready*/
+
+    assign, _, _ := client.FloatingIPActions.Assign("45.55.105.84", droplet.ID)
+
+    fmt.Printf("%+v\n", assign)
   }
 
   return droplet
@@ -90,20 +101,21 @@ func main() {
   installScriptBytes, _ := ioutil.ReadFile("centos7/install.sh")
   centosInstallScript := string(installScriptBytes)
 
-  apiInstallTemplateBytes, _ := ioutil.ReadFile("jivecakeapi/install-template.sh")
-  apiInstallTemplate := string(apiInstallTemplateBytes)
-
   http.HandleFunc("/github", func(writer http.ResponseWriter, request *http.Request) {
     defer request.Body.Close()
+
+    //Secure this endpoint
+    //https://developer.github.com/webhooks/securing/
+    //https://gist.github.com/rjz/b51dc03061dbcff1c521
 
     decoder := json.NewDecoder(request.Body)
     webhook := new(GithubWebHook)
     decoder.Decode(&webhook)
 
     if webhook.Repository.Full_name == "troisio/jivecakeapi" {
-      tmpl, _ := template.New("").Parse(apiInstallTemplate)
+      template, _ := template.ParseFiles("jivecakeapi/install-template.sh")
       var bytes bytes.Buffer
-      tmpl.Execute(&bytes, webhook)
+      template.Execute(&bytes, webhook)
 
       installScript := strings.Join([]string{centosInstallScript, bytes.String()}, "\n\n")
 
