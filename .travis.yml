@@ -2,5 +2,6 @@ language: go
 install:
   - go get github.com/digitalocean/godo
   - go get golang.org/x/oauth2
+  - go get github.com/google/go-github/github
 script:
   - go build continuousdelivery.go
