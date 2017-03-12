@@ -1,23 +1,34 @@
 package main
 
 import (
+  "context"
   "fmt"
   "os"
-  "bytes"
-  "strings"
   "os/exec"
-  "io/ioutil"
-  "text/template"
-  "time"
   "log"
+  "io/ioutil"
+  "time"
   "net/http"
+  "crypto/tls"
   "encoding/json"
   "github.com/digitalocean/godo"
   "golang.org/x/oauth2"
+  "github.com/google/go-github/github"
 )
+
+type Settings struct {
+  Digitalocean struct {
+    AccessToken string
+  }
+
+  Github struct {
+    Secret string
+  }
+}
 
 type GithubWebHook struct {
   After string
+  Ref string
 
   Repository struct {
     Clone_url string
@@ -26,107 +37,125 @@ type GithubWebHook struct {
   }
 }
 
-func createApiDroplet(client *godo.Client, installScript string, currentTime int32) *godo.Droplet {
+func swapJiveCakeApiDroplet(client *godo.Client, hook *GithubWebHook) *godo.Droplet {
+  images, _, _ := client.Images.ListUser(context.TODO(), nil)
+  imageId := -1
+
+  for _, image := range images {
+      if image.Name == "centos-2gb-nyc1-01-jivecakeapi" {
+          imageId = image.ID
+          break
+      }
+  }
+
+  if imageId == -1 {
+    fmt.Errorf("Unable to find image centos-2gb-nyc1-01-jivecakeapi in %+v", images)
+    return nil
+  }
+
   createRequest := godo.DropletCreateRequest{
-    Name: fmt.Sprintf("jivecakeapi-%v", currentTime),
+    Name: fmt.Sprintf("jivecakeapi-%v", (*hook).After),
     Region: "nyc1",
     Size: "2gb",
     Image: godo.DropletCreateImage{
-      Slug: "centos-7-x64",
+      ID: imageId,
     },
     SSHKeys: []godo.DropletCreateSSHKey{
       godo.DropletCreateSSHKey{ID: 1726114, Fingerprint: "65:d9:a9:c6:a9:0d:32:84:25:6b:18:98:51:bd:45:ba"},
+      godo.DropletCreateSSHKey{ID: 7151393, Fingerprint: "d4:fe:af:89:22:bf:f9:ab:ad:a5:ea:99:20:9d:ed:6d"},
     },
     IPv6: true,
+    Monitoring: true,
   }
 
-  newDroplet, _, _ := client.Droplets.Create(&createRequest)
-  droplet, _, _ := client.Droplets.Get(newDroplet.ID)
+  newDroplet, _, err := client.Droplets.Create(context.TODO(), &createRequest)
 
-  for len(droplet.Networks.V4) < 1 {
-    droplet, _, _ = client.Droplets.Get(newDroplet.ID)
+  if err != nil {
+    panic(err)
+  }
+
+  droplet, _, _ := client.Droplets.Get(context.TODO(), newDroplet.ID)
+
+  for len(droplet.Networks.V4) == 0 || droplet.Status != "active" {
+    droplet, _, _ = client.Droplets.Get(context.TODO(), newDroplet.ID)
   }
 
   ip, _ := droplet.PublicIPv4()
 
-  errors := [6]error{}
-
-  errors[0] = exec.Command(
+  cmd := exec.Command(
     "ssh",
     "-o", "StrictHostKeyChecking=no",
-    fmt.Sprintf("root@%s", ip),
-    "bash", "-s", string(installScript),
-  ).Run()
-  errors[1] = exec.Command("scp", "jivecakeapi/ssh/id_rsa", fmt.Sprintf("root@%s:/root/.ssh/id_rsa", ip)).Run()
-  errors[2] = exec.Command("scp", "jivecakeapi/settings.yml", fmt.Sprintf("root@%s:/root/settings.yml", ip)).Run()
-  errors[3] = exec.Command("scp", "jivecakeapi/docker-compose.yml", fmt.Sprintf("root@%s:/root/docker-compose.yml", ip)).Run()
-  errors[4] = exec.Command("scp", "-r", "jivecakeapi/tls", fmt.Sprintf("root@%s:/root/tls", ip),).Run()
-  errors[5] = exec.Command(
-    "ssh",
-    "-o", "StrictHostKeyChecking=no",
-    fmt.Sprintf("root@%s", ip),
-    "docker-compose",
-    "--project-name", "jivecakeapi",
-    "--file", "/root/docker-compose.yml",
-    "up",
-    "-d",
-  ).Run()
+    "root@" + ip,
+    "docker-compose --project-name jivecakeapi --file /root/docker-compose.yml up -d",
+  )
 
-  hasError := false
+  err = cmd.Run()
 
-  for _, err := range errors {
-    if err != nil {
-      fmt.Printf("%+v\n", err)
-      hasError = true
-    }
+  if err != nil {
+    client.Droplets.Delete(context.TODO(), newDroplet.ID)
+    panic(err)
   }
 
-  if !hasError {
-    /*block until droplet ready*/
+  httpClient := &http.Client{Transport: &http.Transport{
+      TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+  }}
 
-    assign, _, _ := client.FloatingIPActions.Assign("45.55.105.84", droplet.ID)
+  for i := 0; i < 50; i++ {
+    _, err = httpClient.Get("https://" + ip)
 
-    fmt.Printf("%+v\n", assign)
+    if err == nil {
+      break
+    }
+
+    time.Sleep(5 * time.Second)
+  }
+
+  if err != nil {
+    client.Droplets.Delete(context.TODO(), newDroplet.ID)
+    panic(err)
+  }
+
+  _, _, err = client.FloatingIPActions.Assign(context.TODO(), "45.55.105.84", droplet.ID)
+
+  if err != nil {
+    client.Droplets.Delete(context.TODO(), newDroplet.ID)
+    panic(err)
   }
 
   return droplet
 }
 
 func main() {
-  token := oauth2.Token{AccessToken: os.Args[1]}
+  bytes, _ := ioutil.ReadFile(os.Args[1])
+
+  settings := new(Settings)
+  json.Unmarshal(bytes, &settings)
+
+  token := oauth2.Token{AccessToken: settings.Digitalocean.AccessToken}
   source := oauth2.StaticTokenSource(&token)
   oauthClient := oauth2.NewClient(oauth2.NoContext, source)
   client := godo.NewClient(oauthClient)
 
-  installScriptBytes, _ := ioutil.ReadFile("centos7/install.sh")
-  centosInstallScript := string(installScriptBytes)
-
   http.HandleFunc("/github", func(writer http.ResponseWriter, request *http.Request) {
     defer request.Body.Close()
 
-    //Secure this endpoint
-    //https://developer.github.com/webhooks/securing/
-    //https://gist.github.com/rjz/b51dc03061dbcff1c521
+    if request.Method == "POST" {
+      payload, err := github.ValidatePayload(request, []byte(settings.Github.Secret))
 
-    decoder := json.NewDecoder(request.Body)
-    webhook := new(GithubWebHook)
-    decoder.Decode(&webhook)
+      if err == nil {
+        webhook := new(GithubWebHook)
+        json.Unmarshal(payload, &webhook)
 
-    if webhook.Repository.Full_name == "troisio/jivecakeapi" {
-      template, _ := template.ParseFiles("jivecakeapi/install-template.sh")
-      var bytes bytes.Buffer
-      template.Execute(&bytes, webhook)
+        if webhook.Repository.Full_name == "troisio/jivecakeapi" && webhook.Ref == "refs/heads/master" {
+          droplet := swapJiveCakeApiDroplet(client, webhook)
 
-      installScript := strings.Join([]string{centosInstallScript, bytes.String()}, "\n\n")
-
-      fmt.Printf("%v: Installing %s %s\n", time.Now(), webhook.Repository.Full_name, webhook.After)
-
-      droplet := createApiDroplet(client, installScript, int32(time.Now().Unix()))
-      ip, _ := droplet.PublicIPv4()
-
-      fmt.Printf("%v: Installation complete %v\n\n", time.Now(), ip)
+          if droplet != nil {
+            fmt.Printf("\n\nJiveCakeAPI Task Complete\n\n%+v\n\n", droplet)
+          }
+        }
+      }
     }
   })
 
-  log.Fatal(http.ListenAndServe(":8080", nil))
+  log.Fatal(http.ListenAndServe(":80", nil))
 }

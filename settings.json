@@ -1,0 +1,8 @@
+{
+  "github": {
+    "secret": ""
+  },
+  "digitalocean": {
+    "accessToken": ""
+  }
+}
