@@ -86,7 +86,7 @@ func swapJiveCakeApiDroplet(client *godo.Client, hook *GithubWebHook) *godo.Drop
     "ssh",
     "-o", "StrictHostKeyChecking=no",
     "root@" + ip,
-    "docker-compose --project-name jivecakeapi --file /root/docker-compose.yml up -d",
+    "docker-compose --project-name jivecakeapi --file ~/docker-compose.yml up -d",
   )
 
   err = cmd.Run()
