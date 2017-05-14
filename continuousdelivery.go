@@ -42,20 +42,20 @@ func swapJiveCakeApiDroplet(client *godo.Client, hook *GithubWebHook) *godo.Drop
   imageId := -1
 
   for _, image := range images {
-      if image.Name == "centos-2gb-nyc1-01-jivecakeapi" {
+      if image.Name == "jivecakeapi" {
           imageId = image.ID
           break
       }
   }
 
   if imageId == -1 {
-    fmt.Errorf("Unable to find image centos-2gb-nyc1-01-jivecakeapi in %+v", images)
+    fmt.Errorf("Unable to find image jivecakeapi in %+v", images)
     return nil
   }
 
   createRequest := godo.DropletCreateRequest{
     Name: fmt.Sprintf("jivecakeapi-%v", (*hook).After),
-    Region: "nyc1",
+    Region: "nyc3",
     Size: "2gb",
     Image: godo.DropletCreateImage{
       ID: imageId,
@@ -86,7 +86,7 @@ func swapJiveCakeApiDroplet(client *godo.Client, hook *GithubWebHook) *godo.Drop
     "ssh",
     "-o", "StrictHostKeyChecking=no",
     "root@" + ip,
-    "docker-compose --project-name jivecakeapi --file ~/docker-compose.yml up -d",
+    "docker-compose --project-name jivecakeapi up -d",
   )
 
   err = cmd.Run()
@@ -115,7 +115,7 @@ func swapJiveCakeApiDroplet(client *godo.Client, hook *GithubWebHook) *godo.Drop
     panic(err)
   }
 
-  _, _, err = client.FloatingIPActions.Assign(context.TODO(), "45.55.105.84", droplet.ID)
+  _, _, err = client.FloatingIPActions.Assign(context.TODO(), "159.203.149.210", droplet.ID)
 
   if err != nil {
     client.Droplets.Delete(context.TODO(), newDroplet.ID)
