@@ -2,7 +2,7 @@ export default {
   oauth: {
     auth0: {
       domain: 'jivecake.auth0.com',
-      client_id: 'YQN0AuvkX5OD20aj7iIj5bCSLDFxZ7Jg'
+      client_id: 'j3ZrslQlvV52JqsDSUjDQy0XPdYEjuMV'
     }
   },
   jivecakeapi: {
