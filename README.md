@@ -12,6 +12,7 @@ docker build -t jivecakeinfrastructure .
 ```sh
 docker run \
   -it \
+  -d \
   -p 80:80 \
   --rm \
   --name jivecakeinfrastructure \
