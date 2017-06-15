@@ -253,12 +253,14 @@ func main() {
 
 							fmt.Printf("end troisio/jivecakeapi %v+v\n", time.Now())
 						}()
-					} else if *(event.Repo.FullName) == "LuisSaybe/jivecakehtml" && *(event.Ref) == "refs/heads/master" {
+					} else if *(event.Repo.FullName) == "troisio/jivecakehtml" && *(event.Ref) == "refs/heads/master" {
+						fmt.Printf("start troisio/jivecakehtml %v+v\n", time.Now())
+
 						go func() {
 							droplet, swapError := swapHTMLDroplet(client, event)
 
 							if swapError == nil {
-								fmt.Printf("jivecakeapi built %v\n", time.Now())
+								fmt.Printf("jivecakehtml built %v\n", time.Now())
 							} else {
 								if droplet != nil {
 									client.Droplets.Delete(context.TODO(), droplet.ID)
