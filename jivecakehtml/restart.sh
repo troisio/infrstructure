@@ -20,5 +20,4 @@ docker run \
     -v /root/www_jivecake_com.key:/root/www_jivecake_com.key \
     -v /root/www_jivecake_com.pem:/root/www_jivecake_com.pem \
     -v /root/settings.js:/root/settings.js \
-    -v /root/server-settings.json:/root/server-settings.json \
     jivecakehtml
